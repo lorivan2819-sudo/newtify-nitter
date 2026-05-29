@@ -35,8 +35,9 @@ MARKER_START = "\u2063"
 MARKER_END = "\u2064"
 MARKER_ZERO = "\u200b"
 MARKER_ONE = "\u200c"
-MEDIA_MAX_BYTES = int(os.environ.get("MEDIA_MAX_BYTES", str(12 * 1024 * 1024)) or str(12 * 1024 * 1024))
 MEDIA_MAX_FILES = int(os.environ.get("MEDIA_MAX_FILES", "4") or "4")
+MEDIA_DOWNLOAD_SECONDS = int(os.environ.get("MEDIA_DOWNLOAD_SECONDS", "20") or "20")
+TELEGRAM_UPLOAD_SECONDS = int(os.environ.get("TELEGRAM_UPLOAD_SECONDS", "35") or "35")
 
 LANG_NAMES = {
     "en": "English",
@@ -121,11 +122,8 @@ def download_media(url: str, content_type: str = "") -> io.BytesIO:
             ),
         },
     )
-    with urllib.request.urlopen(req, timeout=25) as response:
+    with urllib.request.urlopen(req, timeout=MEDIA_DOWNLOAD_SECONDS) as response:
         resolved_type = media_type(url, response.headers.get("content-type", content_type))
-        content_length = int(response.headers.get("content-length") or "0")
-        if content_length > MEDIA_MAX_BYTES:
-            raise RuntimeError("media file is too large")
         buffer = io.BytesIO()
         total = 0
         while True:
@@ -133,12 +131,31 @@ def download_media(url: str, content_type: str = "") -> io.BytesIO:
             if not chunk:
                 break
             total += len(chunk)
-            if total > MEDIA_MAX_BYTES:
-                raise RuntimeError("media file is too large")
             buffer.write(chunk)
+        if total <= 0:
+            raise RuntimeError("media file is empty")
         buffer.seek(0)
         buffer.name = media_name(url, resolved_type)
         return buffer
+
+
+def valid_media_files(files: list[io.BytesIO]) -> list[io.BytesIO]:
+    valid = []
+    for file in files:
+        current = file.tell()
+        file.seek(0, os.SEEK_END)
+        size = file.tell()
+        file.seek(0)
+        if size > 0:
+            valid.append(file)
+        else:
+            file.seek(current)
+    return valid
+
+
+def error_text(exc: Exception) -> str:
+    message = str(exc).strip()
+    return message or type(exc).__name__
 
 
 def clean_description(value: str) -> str:
@@ -379,7 +396,8 @@ async def send_item(
             try:
                 files.append(download_media(str(entry["url"]), str(entry.get("type", ""))))
             except Exception as exc:
-                media_errors.append(f"{entry.get('url')}: {exc}")
+                media_errors.append(f"{entry.get('url')}: {error_text(exc)}")
+        files = valid_media_files(files)
 
         if files:
             try:
@@ -391,24 +409,28 @@ async def send_item(
                         parse_mode="html" if caption_html else None,
                         supports_streaming=has_video,
                     ),
-                    timeout=35,
+                    timeout=TELEGRAM_UPLOAD_SECONDS,
                 )
                 return {"media_found": len(media), "media_sent": len(files), "media_errors": media_errors}
             except MediaCaptionTooLongError:
                 await asyncio.wait_for(
                     client.send_file(channel, files, supports_streaming=has_video),
-                    timeout=35,
+                    timeout=TELEGRAM_UPLOAD_SECONDS,
                 )
                 await send_text_message(client, channel, formatted, url)
                 return {"media_found": len(media), "media_sent": len(files), "media_errors": media_errors}
             except Exception as exc:
-                media_errors.append(f"telegram upload: {exc}")
+                media_errors.append(f"telegram upload: {error_text(exc)}")
+                files = []
 
         if media_errors:
             print(f"Media failed for {url}: {'; '.join(media_errors)[:900]}")
 
         if require_media:
             return {"media_found": len(media), "media_sent": 0, "media_errors": media_errors}
+
+        await send_text_message(client, channel, formatted, url)
+        return {"media_found": len(media), "media_sent": 0, "media_errors": media_errors}
 
     legacy_images = [str(item) for item in item.get("images", [])]
     if legacy_images:
@@ -420,13 +442,13 @@ async def send_item(
                     caption=caption_html or caption_text,
                     parse_mode="html" if caption_html else None,
                 ),
-                timeout=35,
+                timeout=TELEGRAM_UPLOAD_SECONDS,
             )
             return {"media_found": len(legacy_images), "media_sent": min(len(legacy_images), MEDIA_MAX_FILES), "media_errors": []}
         except MediaCaptionTooLongError:
             await asyncio.wait_for(
                 client.send_file(channel, legacy_images[:MEDIA_MAX_FILES]),
-                timeout=35,
+                timeout=TELEGRAM_UPLOAD_SECONDS,
             )
             await send_text_message(client, channel, formatted, url)
             return {"media_found": len(legacy_images), "media_sent": min(len(legacy_images), MEDIA_MAX_FILES), "media_errors": []}
