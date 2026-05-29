@@ -41,6 +41,8 @@ def public_config() -> dict[str, object]:
         "filters": {
             "xMaxAgeMinutes": env("X_MAX_AGE_MINUTES", "2"),
             "publishMaxAgeMinutes": env("PUBLISH_MAX_AGE_MINUTES", "45"),
+            "translateEnabled": env("TRANSLATE_ENABLED", "true"),
+            "translateTargetLang": env("TRANSLATE_TARGET_LANG", env("TRANSLATE_SECONDARY_LANG", "ru")),
         },
         "access": {
             "telegramApiId": is_set("TELEGRAM_API_ID"),
@@ -86,6 +88,18 @@ def public_config() -> dict[str, object]:
                 "section": "RSS filter",
                 "safeValue": env("X_MAX_AGE_MINUTES", "2"),
                 "note": "Old local bot freshness setting; publisher uses the value above.",
+            },
+            {
+                "name": "TRANSLATE_ENABLED",
+                "section": "Translation",
+                "safeValue": env("TRANSLATE_ENABLED", "true"),
+                "note": "Use true or false. When true, Telegram posts include a translated version.",
+            },
+            {
+                "name": "TRANSLATE_TARGET_LANG",
+                "section": "Translation",
+                "safeValue": env("TRANSLATE_TARGET_LANG", env("TRANSLATE_SECONDARY_LANG", "ru")),
+                "note": "Target language code for translation, for example ru, en, es.",
             },
             {
                 "name": "X_SESSIONS_B64",

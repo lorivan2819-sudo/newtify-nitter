@@ -326,12 +326,31 @@ function cdata(value) {
   return String(value || "").replaceAll("]]>", "]]]]><![CDATA[>");
 }
 
+function retweetedTweet(tweet) {
+  return unwrapTweet(tweet?.legacy?.retweeted_status_result?.result);
+}
+
+function cleanTweetText(value) {
+  return String(value || "")
+    .replace(/(?:^|\s)https:\/\/t\.co\/[A-Za-z0-9_]+/g, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
 function tweetText(tweet) {
-  return (
+  const retweet = retweetedTweet(tweet);
+  if (retweet) {
+    const author = tweetAuthor(retweet, "unknown");
+    return cleanTweetText(`RT @${author.screenName}: ${tweetText(retweet)}`);
+  }
+
+  return cleanTweetText(
     tweet.note_tweet?.note_tweet_results?.result?.text ||
     tweet.legacy?.full_text ||
     ""
-  ).replace(/\s+https:\/\/t\.co\/\w+$/g, "");
+  );
 }
 
 function mediaContentType(url, fallback = "") {
@@ -436,6 +455,11 @@ function collectMedia(value, output = []) {
 }
 
 function tweetMedia(tweet) {
+  const retweet = retweetedTweet(tweet);
+  if (retweet) {
+    return tweetMedia(retweet);
+  }
+
   const media = collectMedia({
     legacy: tweet.legacy,
     note_tweet: tweet.note_tweet,
@@ -485,7 +509,7 @@ function directRss(username, tweets) {
 
       return [
         "<item>",
-        `<title>${xml(text.slice(0, 180) || url)}</title>`,
+        `<title>${xml(text || url)}</title>`,
         `<dc:creator>@${xml(author.screenName)}</dc:creator>`,
         `<description><![CDATA[${cdata(description)}]]></description>`,
         `<pubDate>${xml(created)}</pubDate>`,

@@ -19,16 +19,41 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.tl.types import MessageEntityTextUrl, MessageEntityUrl
 
+try:
+    from deep_translator import GoogleTranslator
+except Exception:
+    GoogleTranslator = None
+
 
 STATUS_RE = re.compile(r"/status/(\d{8,})")
 IMG_RE = re.compile(r'<img[^>]+src="([^"]+)"', re.I)
 TAG_RE = re.compile(r"<[^>]+>")
+TCO_RE = re.compile(r"(?:^|\s)https://t\.co/[A-Za-z0-9_]+")
 MEDIA_MAX_BYTES = int(os.environ.get("MEDIA_MAX_BYTES", str(12 * 1024 * 1024)) or str(12 * 1024 * 1024))
 MEDIA_MAX_FILES = int(os.environ.get("MEDIA_MAX_FILES", "4") or "4")
+
+LANG_NAMES = {
+    "en": "English",
+    "ru": "Russian",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "it": "Italian",
+    "pt": "Portuguese",
+    "tr": "Turkish",
+    "uk": "Ukrainian",
+}
 
 
 def env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+    raw = env(name)
+    if not raw:
+        return default
+    return raw.lower() in {"1", "true", "yes", "on"}
 
 
 def source_users() -> list[str]:
@@ -102,7 +127,34 @@ def download_media(url: str, content_type: str = "") -> io.BytesIO:
 def clean_description(value: str) -> str:
     value = value.replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
     value = TAG_RE.sub("", value)
+    value = TCO_RE.sub("", value)
+    value = re.sub(r"[ \t]+\n", "\n", value)
+    value = re.sub(r"[ \t]{2,}", " ", value)
     return re.sub(r"\n{3,}", "\n\n", value).strip()
+
+
+def translate_text(text: str, target: str) -> str:
+    if not GoogleTranslator or not text.strip():
+        return ""
+    try:
+        translated = GoogleTranslator(source="auto", target=target).translate(text)
+    except Exception as exc:
+        print(f"Translation failed: {exc}")
+        return ""
+    if not translated or translated.strip() == text.strip():
+        return ""
+    return translated.strip()
+
+
+async def format_post_text(text: str) -> str:
+    if not env_bool("TRANSLATE_ENABLED", True):
+        return text
+    target = env("TRANSLATE_TARGET_LANG", env("TRANSLATE_SECONDARY_LANG", "ru")) or "ru"
+    translated = await asyncio.to_thread(translate_text, text, target)
+    if not translated:
+        return text
+    label = LANG_NAMES.get(target, target.upper())
+    return f"{text}\n\n{label}:\n{translated}"
 
 
 def parse_items(feed: str) -> list[dict[str, object]]:
@@ -193,6 +245,7 @@ async def send_item(
     require_media: bool = False,
 ) -> dict[str, object]:
     text = str(item["text"]).strip() or str(item["url"])
+    text = await format_post_text(text)
     url = str(item["url"])
     hidden_source = f'\n\n<a href="{escape(url)}">&#8291;</a>'
     caption = f"{escape(text)}{hidden_source}"
