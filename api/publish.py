@@ -167,6 +167,15 @@ def clean_description(value: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", value).strip()
 
 
+def text_fingerprint(value: str) -> str:
+    value = value.replace(MARKER_START, "").replace(MARKER_END, "")
+    value = value.replace(MARKER_ZERO, "").replace(MARKER_ONE, "")
+    value = TAG_RE.sub("", value)
+    value = TCO_RE.sub("", value)
+    value = re.sub(r"\s+", " ", value).strip().lower()
+    return value[:320]
+
+
 def encode_hidden_id(source_url: str) -> str:
     match = STATUS_RE.search(source_url)
     if not match:
@@ -318,17 +327,21 @@ def entity_url(message, entity) -> str:
     return ""
 
 
-async def sent_statuses(client: TelegramClient, channel: str) -> dict[str, bool]:
+async def sent_statuses(client: TelegramClient, channel: str) -> tuple[dict[str, bool], set[str]]:
     ids: dict[str, bool] = {}
+    fingerprints: set[str] = set()
     async for message in client.iter_messages(channel, limit=80):
         text = message.message or ""
+        fingerprint = text_fingerprint(text)
+        if fingerprint:
+            fingerprints.add(fingerprint)
         message_ids = set(STATUS_RE.findall(text))
         message_ids.update(decode_hidden_ids(text))
         for entity in message.entities or []:
             message_ids.update(STATUS_RE.findall(entity_url(message, entity)))
         for tweet_id in message_ids:
             ids[tweet_id] = ids.get(tweet_id, False) or bool(message.media)
-    return ids
+    return ids, fingerprints
 
 
 def message_chunks(value: str, limit: int = 3900) -> list[str]:
@@ -352,11 +365,10 @@ async def send_text_message(
     formatted: FormattedMessage,
     source_url: str,
 ) -> None:
-    marker = encode_hidden_id(source_url)
-    if formatted.html_text and len(formatted.html_text + marker) <= 4096:
+    if formatted.html_text and len(formatted.html_text) <= 4096:
         await client.send_message(
             channel,
-            formatted.html_text + marker,
+            formatted.html_text,
             parse_mode="html",
             link_preview=False,
         )
@@ -365,10 +377,9 @@ async def send_text_message(
     text = formatted.text or source_url
     chunks = message_chunks(text)
     for index, chunk in enumerate(chunks):
-        suffix = marker if index == len(chunks) - 1 else ""
         await client.send_message(
             channel,
-            f"{escape(chunk)}{suffix}",
+            escape(chunk),
             parse_mode="html",
             link_preview=False,
         )
@@ -383,9 +394,8 @@ async def send_item(
     text = str(item["text"]).strip() or str(item["url"])
     formatted = await format_post_text(text)
     url = str(item["url"])
-    marker = encode_hidden_id(url)
-    caption_html = f"{formatted.html_text}{marker}" if formatted.html_text else None
-    caption_text = f"{escape(formatted.text)}{marker}" if formatted.text else marker
+    caption_html = formatted.html_text
+    caption_text = escape(formatted.text) if formatted.text else None
     media = [entry for entry in item.get("media", []) if isinstance(entry, dict)]
     has_video = any(str(entry.get("type", "")).startswith("video/") for entry in media)
 
@@ -476,7 +486,7 @@ async def publish() -> dict[str, object]:
     client = TelegramClient(StringSession(session_string), api_id, api_hash)
     await client.connect()
     try:
-        already_sent = await sent_statuses(client, channel)
+        already_sent, sent_fingerprints = await sent_statuses(client, channel)
         posted: list[str] = []
         sent_details: dict[str, object] = {}
         checked: dict[str, object] = {}
@@ -490,6 +500,7 @@ async def publish() -> dict[str, object]:
 
             for item in sorted(parse_items(body), key=lambda row: row["published"]):
                 tweet_id = str(item["id"])
+                fingerprint = text_fingerprint(str(item.get("text", "")))
                 if not is_recent(item):
                     continue
                 has_media = bool(item.get("media") or item.get("images"))
@@ -504,8 +515,12 @@ async def publish() -> dict[str, object]:
                             if len(posted) >= max_posts:
                                 return {"ok": True, "posted": posted, "sent": sent_details, "checked": checked}
                     continue
+                if fingerprint and fingerprint in sent_fingerprints:
+                    continue
                 sent_details[tweet_id] = await send_item(client, channel, item)
                 already_sent[tweet_id] = bool(sent_details[tweet_id].get("media_sent", 0))
+                if fingerprint:
+                    sent_fingerprints.add(fingerprint)
                 posted.append(tweet_id)
                 if len(posted) >= max_posts:
                     return {"ok": True, "posted": posted, "sent": sent_details, "checked": checked}
