@@ -31,6 +31,10 @@ STATUS_RE = re.compile(r"/status/(\d{8,})")
 IMG_RE = re.compile(r'<img[^>]+src="([^"]+)"', re.I)
 TAG_RE = re.compile(r"<[^>]+>")
 TCO_RE = re.compile(r"https://t\.co/[A-Za-z0-9_]+")
+MARKER_START = "\u2063"
+MARKER_END = "\u2064"
+MARKER_ZERO = "\u200b"
+MARKER_ONE = "\u200c"
 MEDIA_MAX_BYTES = int(os.environ.get("MEDIA_MAX_BYTES", str(12 * 1024 * 1024)) or str(12 * 1024 * 1024))
 MEDIA_MAX_FILES = int(os.environ.get("MEDIA_MAX_FILES", "4") or "4")
 
@@ -144,6 +148,41 @@ def clean_description(value: str) -> str:
     value = re.sub(r"[ \t]+\n", "\n", value)
     value = re.sub(r"[ \t]{2,}", " ", value)
     return re.sub(r"\n{3,}", "\n\n", value).strip()
+
+
+def encode_hidden_id(source_url: str) -> str:
+    match = STATUS_RE.search(source_url)
+    if not match:
+        return ""
+    bits = "".join(f"{int(digit):04b}" for digit in match.group(1))
+    payload = bits.replace("0", MARKER_ZERO).replace("1", MARKER_ONE)
+    return f"{MARKER_START}{payload}{MARKER_END}"
+
+
+def decode_hidden_ids(text: str) -> set[str]:
+    ids = set()
+    start = 0
+    while True:
+        left = text.find(MARKER_START, start)
+        if left < 0:
+            break
+        right = text.find(MARKER_END, left + 1)
+        if right < 0:
+            break
+        payload = text[left + 1 : right]
+        bits = payload.replace(MARKER_ZERO, "0").replace(MARKER_ONE, "1")
+        if bits and len(bits) % 4 == 0 and set(bits) <= {"0", "1"}:
+            digits = []
+            for index in range(0, len(bits), 4):
+                value = int(bits[index : index + 4], 2)
+                if value > 9:
+                    digits = []
+                    break
+                digits.append(str(value))
+            if digits:
+                ids.add("".join(digits))
+        start = right + 1
+    return ids
 
 
 def translate_text(text: str, target: str) -> str:
@@ -267,6 +306,7 @@ async def sent_statuses(client: TelegramClient, channel: str) -> dict[str, bool]
     async for message in client.iter_messages(channel, limit=80):
         text = message.message or ""
         message_ids = set(STATUS_RE.findall(text))
+        message_ids.update(decode_hidden_ids(text))
         for entity in message.entities or []:
             message_ids.update(STATUS_RE.findall(entity_url(message, entity)))
         for tweet_id in message_ids:
@@ -295,11 +335,11 @@ async def send_text_message(
     formatted: FormattedMessage,
     source_url: str,
 ) -> None:
-    hidden_source = f'\n\n<a href="{escape(source_url)}">&#8291;</a>'
-    if formatted.html_text and len(formatted.html_text + hidden_source) <= 4096:
+    marker = encode_hidden_id(source_url)
+    if formatted.html_text and len(formatted.html_text + marker) <= 4096:
         await client.send_message(
             channel,
-            formatted.html_text + hidden_source,
+            formatted.html_text + marker,
             parse_mode="html",
             link_preview=False,
         )
@@ -308,7 +348,7 @@ async def send_text_message(
     text = formatted.text or source_url
     chunks = message_chunks(text)
     for index, chunk in enumerate(chunks):
-        suffix = hidden_source if index == len(chunks) - 1 else ""
+        suffix = marker if index == len(chunks) - 1 else ""
         await client.send_message(
             channel,
             f"{escape(chunk)}{suffix}",
@@ -326,9 +366,9 @@ async def send_item(
     text = str(item["text"]).strip() or str(item["url"])
     formatted = await format_post_text(text)
     url = str(item["url"])
-    hidden_source = f'\n\n<a href="{escape(url)}">&#8291;</a>'
-    caption_html = f"{formatted.html_text}{hidden_source}" if formatted.html_text else None
-    caption_text = f"{escape(formatted.text)}{hidden_source}" if formatted.text else hidden_source
+    marker = encode_hidden_id(url)
+    caption_html = f"{formatted.html_text}{marker}" if formatted.html_text else None
+    caption_text = f"{escape(formatted.text)}{marker}" if formatted.text else marker
     media = [entry for entry in item.get("media", []) if isinstance(entry, dict)]
     has_video = any(str(entry.get("type", "")).startswith("video/") for entry in media)
 
