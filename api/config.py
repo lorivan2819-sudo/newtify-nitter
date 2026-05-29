@@ -42,6 +42,7 @@ def public_config() -> dict[str, object]:
             "xMaxAgeMinutes": env("X_MAX_AGE_MINUTES", "2"),
             "publishMaxAgeMinutes": env("PUBLISH_MAX_AGE_MINUTES", "45"),
             "translateEnabled": env("TRANSLATE_ENABLED", "true"),
+            "translatePrimaryLang": env("TRANSLATE_PRIMARY_LANG", "en"),
             "translateTargetLang": env("TRANSLATE_TARGET_LANG", env("TRANSLATE_SECONDARY_LANG", "ru")),
         },
         "access": {
@@ -94,6 +95,12 @@ def public_config() -> dict[str, object]:
                 "section": "Translation",
                 "safeValue": env("TRANSLATE_ENABLED", "true"),
                 "note": "Use true or false. When true, Telegram posts include a translated version.",
+            },
+            {
+                "name": "TRANSLATE_PRIMARY_LANG",
+                "section": "Translation",
+                "safeValue": env("TRANSLATE_PRIMARY_LANG", "en"),
+                "note": "Primary visible language, matching the old bot default.",
             },
             {
                 "name": "TRANSLATE_TARGET_LANG",

@@ -332,7 +332,7 @@ function retweetedTweet(tweet) {
 
 function cleanTweetText(value) {
   return String(value || "")
-    .replace(/(?:^|\s)https:\/\/t\.co\/[A-Za-z0-9_]+/g, "")
+    .replace(/https:\/\/t\.co\/[A-Za-z0-9_]+/g, "")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .replace(/[ \t]{2,}/g, " ")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from html import escape
@@ -16,6 +17,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 
 from telethon import TelegramClient
+from telethon.errors.rpcerrorlist import MediaCaptionTooLongError
 from telethon.sessions import StringSession
 from telethon.tl.types import MessageEntityTextUrl, MessageEntityUrl
 
@@ -28,21 +30,32 @@ except Exception:
 STATUS_RE = re.compile(r"/status/(\d{8,})")
 IMG_RE = re.compile(r'<img[^>]+src="([^"]+)"', re.I)
 TAG_RE = re.compile(r"<[^>]+>")
-TCO_RE = re.compile(r"(?:^|\s)https://t\.co/[A-Za-z0-9_]+")
+TCO_RE = re.compile(r"https://t\.co/[A-Za-z0-9_]+")
 MEDIA_MAX_BYTES = int(os.environ.get("MEDIA_MAX_BYTES", str(12 * 1024 * 1024)) or str(12 * 1024 * 1024))
 MEDIA_MAX_FILES = int(os.environ.get("MEDIA_MAX_FILES", "4") or "4")
 
 LANG_NAMES = {
     "en": "English",
-    "ru": "Russian",
-    "es": "Spanish",
-    "fr": "French",
-    "de": "German",
-    "it": "Italian",
-    "pt": "Portuguese",
-    "tr": "Turkish",
-    "uk": "Ukrainian",
+    "ru": "Русский",
+    "es": "Español",
+    "fr": "Français",
+    "de": "Deutsch",
+    "it": "Italiano",
+    "pt": "Português",
+    "zh": "中文",
+    "ja": "日本語",
+    "ko": "한국어",
+    "ar": "العربية",
+    "hi": "हिन्दी",
+    "tr": "Türkçe",
+    "uk": "Українська",
 }
+
+
+@dataclass(frozen=True)
+class FormattedMessage:
+    text: str
+    html_text: str | None = None
 
 
 def env(name: str, default: str = "") -> str:
@@ -146,15 +159,38 @@ def translate_text(text: str, target: str) -> str:
     return translated.strip()
 
 
-async def format_post_text(text: str) -> str:
+def html_escape(value: str) -> str:
+    return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def format_bilingual_message(
+    original_text: str,
+    primary_lang: str = "en",
+    secondary_lang: str = "ru",
+) -> FormattedMessage:
+    if not original_text or not original_text.strip() or not GoogleTranslator:
+        return FormattedMessage(original_text)
+
+    primary_text = translate_text(original_text, primary_lang) or original_text
+    secondary_text = translate_text(original_text, secondary_lang)
+    if not secondary_text or secondary_text.strip() == primary_text.strip():
+        return FormattedMessage(primary_text)
+
+    name = LANG_NAMES.get(secondary_lang, secondary_lang.upper())
+    text = f"{primary_text}\n\n{name}:\n{secondary_text}"
+    html_text = (
+        f"{html_escape(primary_text)}\n\n"
+        f"<blockquote expandable>{html_escape(name)}:\n{html_escape(secondary_text)}</blockquote>"
+    )
+    return FormattedMessage(text=text, html_text=html_text)
+
+
+async def format_post_text(text: str) -> FormattedMessage:
     if not env_bool("TRANSLATE_ENABLED", True):
-        return text
-    target = env("TRANSLATE_TARGET_LANG", env("TRANSLATE_SECONDARY_LANG", "ru")) or "ru"
-    translated = await asyncio.to_thread(translate_text, text, target)
-    if not translated:
-        return text
-    label = LANG_NAMES.get(target, target.upper())
-    return f"{text}\n\n{label}:\n{translated}"
+        return FormattedMessage(text)
+    primary = env("TRANSLATE_PRIMARY_LANG", "en") or "en"
+    secondary = env("TRANSLATE_TARGET_LANG", env("TRANSLATE_SECONDARY_LANG", "ru")) or "ru"
+    return await asyncio.to_thread(format_bilingual_message, text, primary, secondary)
 
 
 def parse_items(feed: str) -> list[dict[str, object]]:
@@ -238,6 +274,49 @@ async def sent_statuses(client: TelegramClient, channel: str) -> dict[str, bool]
     return ids
 
 
+def message_chunks(value: str, limit: int = 3900) -> list[str]:
+    chunks = []
+    remaining = value
+    while remaining:
+        if len(remaining) <= limit:
+            chunks.append(remaining)
+            break
+        split_at = remaining.rfind("\n", 0, limit)
+        if split_at < limit // 2:
+            split_at = limit
+        chunks.append(remaining[:split_at].strip())
+        remaining = remaining[split_at:].strip()
+    return chunks
+
+
+async def send_text_message(
+    client: TelegramClient,
+    channel: str,
+    formatted: FormattedMessage,
+    source_url: str,
+) -> None:
+    hidden_source = f'\n\n<a href="{escape(source_url)}">&#8291;</a>'
+    if formatted.html_text and len(formatted.html_text + hidden_source) <= 4096:
+        await client.send_message(
+            channel,
+            formatted.html_text + hidden_source,
+            parse_mode="html",
+            link_preview=False,
+        )
+        return
+
+    text = formatted.text or source_url
+    chunks = message_chunks(text)
+    for index, chunk in enumerate(chunks):
+        suffix = hidden_source if index == len(chunks) - 1 else ""
+        await client.send_message(
+            channel,
+            f"{escape(chunk)}{suffix}",
+            parse_mode="html",
+            link_preview=False,
+        )
+
+
 async def send_item(
     client: TelegramClient,
     channel: str,
@@ -245,11 +324,13 @@ async def send_item(
     require_media: bool = False,
 ) -> dict[str, object]:
     text = str(item["text"]).strip() or str(item["url"])
-    text = await format_post_text(text)
+    formatted = await format_post_text(text)
     url = str(item["url"])
     hidden_source = f'\n\n<a href="{escape(url)}">&#8291;</a>'
-    caption = f"{escape(text)}{hidden_source}"
+    caption_html = f"{formatted.html_text}{hidden_source}" if formatted.html_text else None
+    caption_text = f"{escape(formatted.text)}{hidden_source}" if formatted.text else hidden_source
     media = [entry for entry in item.get("media", []) if isinstance(entry, dict)]
+    has_video = any(str(entry.get("type", "")).startswith("video/") for entry in media)
 
     if media:
         files = []
@@ -266,12 +347,19 @@ async def send_item(
                     client.send_file(
                         channel,
                         files,
-                        caption=caption[:3900],
-                        parse_mode="html",
-                        link_preview=False,
+                        caption=caption_html or caption_text,
+                        parse_mode="html" if caption_html else None,
+                        supports_streaming=has_video,
                     ),
                     timeout=35,
                 )
+                return {"media_found": len(media), "media_sent": len(files), "media_errors": media_errors}
+            except MediaCaptionTooLongError:
+                await asyncio.wait_for(
+                    client.send_file(channel, files, supports_streaming=has_video),
+                    timeout=35,
+                )
+                await send_text_message(client, channel, formatted, url)
                 return {"media_found": len(media), "media_sent": len(files), "media_errors": media_errors}
             except Exception as exc:
                 media_errors.append(f"telegram upload: {exc}")
@@ -289,12 +377,18 @@ async def send_item(
                 client.send_file(
                     channel,
                     legacy_images[:MEDIA_MAX_FILES],
-                    caption=caption[:3900],
-                    parse_mode="html",
-                    link_preview=False,
+                    caption=caption_html or caption_text,
+                    parse_mode="html" if caption_html else None,
                 ),
                 timeout=35,
             )
+            return {"media_found": len(legacy_images), "media_sent": min(len(legacy_images), MEDIA_MAX_FILES), "media_errors": []}
+        except MediaCaptionTooLongError:
+            await asyncio.wait_for(
+                client.send_file(channel, legacy_images[:MEDIA_MAX_FILES]),
+                timeout=35,
+            )
+            await send_text_message(client, channel, formatted, url)
             return {"media_found": len(legacy_images), "media_sent": min(len(legacy_images), MEDIA_MAX_FILES), "media_errors": []}
         except Exception:
             pass
@@ -302,12 +396,7 @@ async def send_item(
     if require_media:
         return {"media_found": len(media), "media_sent": 0, "media_errors": []}
 
-    await client.send_message(
-        channel,
-        caption[:3900],
-        parse_mode="html",
-        link_preview=False,
-    )
+    await send_text_message(client, channel, formatted, url)
     return {"media_found": len(media), "media_sent": 0, "media_errors": media_errors if media else []}
 
 

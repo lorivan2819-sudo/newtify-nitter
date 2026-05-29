@@ -18,6 +18,7 @@ ALLOWED_KEYS = {
     "PUBLISH_MAX_AGE_MINUTES": "plain",
     "X_MAX_AGE_MINUTES": "plain",
     "TRANSLATE_ENABLED": "plain",
+    "TRANSLATE_PRIMARY_LANG": "plain",
     "TRANSLATE_TARGET_LANG": "plain",
     "RSS_BASE_URL": "plain",
     "X_SESSIONS_B64": "sensitive",
