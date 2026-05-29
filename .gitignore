@@ -8,3 +8,5 @@ oc.exe
 *.yaml
 nitter-*.yaml
 tools/
+
+.env*.local

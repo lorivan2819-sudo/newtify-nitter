@@ -334,11 +334,124 @@ function tweetText(tweet) {
   ).replace(/\s+https:\/\/t\.co\/\w+$/g, "");
 }
 
+function mediaContentType(url, fallback = "") {
+  if (fallback) {
+    return fallback;
+  }
+  const path = String(url || "").split("?")[0].toLowerCase();
+  if (path.endsWith(".png")) {
+    return "image/png";
+  }
+  if (path.endsWith(".webp")) {
+    return "image/webp";
+  }
+  if (path.endsWith(".mp4")) {
+    return "video/mp4";
+  }
+  return "image/jpeg";
+}
+
+function bestVideoVariant(media) {
+  const variants = media.video_info?.variants || [];
+  return variants
+    .filter((variant) => variant.content_type === "video/mp4" && variant.url)
+    .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
+}
+
+function mediaFromItem(item) {
+  const video = bestVideoVariant(item);
+  if (video?.url) {
+    return {
+      url: video.url,
+      type: "video",
+      contentType: video.content_type || "video/mp4"
+    };
+  }
+  const imageUrl = item.media_url_https || item.media_url;
+  if (!imageUrl) {
+    return null;
+  }
+  return {
+    url: imageUrl,
+    type: item.type === "photo" ? "photo" : "image",
+    contentType: mediaContentType(imageUrl)
+  };
+}
+
+function isMediaUrl(value) {
+  try {
+    const url = new URL(String(value));
+    const path = url.pathname.toLowerCase();
+    return (
+      ["pbs.twimg.com", "video.twimg.com", "ton.twimg.com"].includes(url.hostname) &&
+      !path.includes("/profile_images/") &&
+      !path.includes("/profile_banners/") &&
+      !path.endsWith(".m3u8")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function collectMedia(value, output = []) {
+  if (!value || typeof value !== "object") {
+    return output;
+  }
+
+  const direct = mediaFromItem(value);
+  if (direct) {
+    output.push(direct);
+  }
+
+  const imageValue = value.image_value?.url || value.thumbnail_image_original?.url;
+  if (imageValue && isMediaUrl(imageValue)) {
+    output.push({
+      url: imageValue,
+      type: "image",
+      contentType: mediaContentType(imageValue)
+    });
+  }
+
+  for (const [key, nested] of Object.entries(value)) {
+    if (
+      key === "profile_image_url_https" ||
+      key === "profile_image_url" ||
+      key === "profile_banner_url" ||
+      key === "variants"
+    ) {
+      continue;
+    }
+    if (typeof nested === "string" && isMediaUrl(nested)) {
+      output.push({
+        url: nested,
+        type: nested.includes("video.twimg.com") ? "video" : "image",
+        contentType: mediaContentType(nested)
+      });
+    } else if (nested && typeof nested === "object") {
+      collectMedia(nested, output);
+    }
+  }
+
+  return output;
+}
+
 function tweetMedia(tweet) {
-  const media = tweet.legacy?.extended_entities?.media || tweet.legacy?.entities?.media || [];
+  const media = collectMedia({
+    legacy: tweet.legacy,
+    note_tweet: tweet.note_tweet,
+    card: tweet.card
+  });
+  const seen = new Set();
+
   return media
-    .map((item) => item.media_url_https || item.media_url)
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter((item) => {
+      if (seen.has(item.url)) {
+        return false;
+      }
+      seen.add(item.url);
+      return true;
+    });
 }
 
 function tweetAuthor(tweet, fallbackUser) {
@@ -357,8 +470,14 @@ function directRss(username, tweets) {
       const author = tweetAuthor(tweet, username);
       const text = tweetText(tweet);
       const url = `https://x.com/${author.screenName}/status/${tweet.rest_id}`;
-      const images = tweetMedia(tweet);
-      const imageHtml = images.map((src) => `<br><img src="${xml(src)}">`).join("");
+      const media = tweetMedia(tweet);
+      const imageHtml = media
+        .filter((item) => item.contentType.startsWith("image/"))
+        .map((item) => `<br><img src="${xml(item.url)}">`)
+        .join("");
+      const enclosures = media
+        .map((item) => `<enclosure url="${xml(item.url)}" type="${xml(item.contentType)}" />`)
+        .join("");
       const description = `${xml(text).replaceAll("\n", "<br>")}${imageHtml}`;
       const created = tweet.legacy?.created_at
         ? new Date(tweet.legacy.created_at).toUTCString()
@@ -372,6 +491,7 @@ function directRss(username, tweets) {
         `<pubDate>${xml(created)}</pubDate>`,
         `<guid>${xml(url)}</guid>`,
         `<link>${xml(url)}</link>`,
+        enclosures,
         "</item>"
       ].join("");
     })
