@@ -1,0 +1,42 @@
+{
+  "version": 2,
+  "functions": {
+    "api/*.js": {
+      "maxDuration": 10
+    },
+    "api/*.py": {
+      "maxDuration": 60
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/publish",
+      "schedule": "0 8 * * *"
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/health",
+      "destination": "/api/health"
+    },
+    {
+      "source": "/:user/rss",
+      "destination": "/api/rss?user=:user"
+    },
+    {
+      "source": "/",
+      "destination": "/api/health"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/:user/rss",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "s-maxage=10, stale-while-revalidate=30"
+        }
+      ]
+    }
+  ]
+}

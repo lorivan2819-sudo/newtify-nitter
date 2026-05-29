@@ -1,0 +1,10 @@
+.vercel
+__pycache__/
+*.pyc
+.python-version
+.vercel/
+sessions.jsonl
+oc.exe
+*.yaml
+nitter-*.yaml
+tools/

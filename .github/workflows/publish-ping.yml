@@ -1,0 +1,31 @@
+name: Newtify publish ping
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: newtify-publish-ping
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Call publisher
+        run: |
+          set -euo pipefail
+          body="$(curl --fail-with-body --silent --show-error --max-time 55 https://newtify-nitter.vercel.app/api/publish)"
+          echo "$body"
+          echo "$body" | python -m json.tool >/dev/null
+          python - "$body" <<'PY'
+          import json
+          import sys
+
+          data = json.loads(sys.argv[1])
+          if not data.get("ok"):
+              raise SystemExit("Publisher returned ok=false")
+          print("posted:", ",".join(data.get("posted") or []) or "none")
+          PY

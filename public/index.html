@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Newtify Control</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f7f8f5;
+        --panel: #ffffff;
+        --line: #d9ded5;
+        --text: #182018;
+        --muted: #687266;
+        --green: #256f3d;
+        --blue: #255f85;
+        --red: #a33a32;
+        --amber: #8a641f;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 15px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      main {
+        width: min(1120px, calc(100% - 32px));
+        margin: 24px auto 48px;
+      }
+
+      header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 18px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 28px;
+        line-height: 1.1;
+        letter-spacing: 0;
+      }
+
+      h2 {
+        margin: 0 0 12px;
+        font-size: 16px;
+        letter-spacing: 0;
+      }
+
+      p { margin: 0; color: var(--muted); }
+
+      a { color: var(--blue); }
+
+      button, .button {
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--text);
+        min-height: 40px;
+        padding: 0 14px;
+        border-radius: 6px;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font: inherit;
+      }
+
+      button.primary {
+        background: var(--green);
+        border-color: var(--green);
+        color: #fff;
+      }
+
+      button:disabled {
+        cursor: wait;
+        opacity: .65;
+      }
+
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 12px;
+      }
+
+      section {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 16px;
+      }
+
+      .span-4 { grid-column: span 4; }
+      .span-6 { grid-column: span 6; }
+      .span-8 { grid-column: span 8; }
+      .span-12 { grid-column: span 12; }
+
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 650;
+      }
+
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: var(--amber);
+        flex: none;
+      }
+
+      .dot.ok { background: var(--green); }
+      .dot.bad { background: var(--red); }
+
+      dl {
+        display: grid;
+        grid-template-columns: minmax(110px, 170px) 1fr;
+        gap: 8px 12px;
+        margin: 0;
+      }
+
+      dt { color: var(--muted); }
+      dd {
+        margin: 0;
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th, td {
+        border-top: 1px solid var(--line);
+        padding: 10px 8px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--muted);
+        font-weight: 600;
+        font-size: 13px;
+      }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-size: 13px;
+      }
+
+      .log {
+        height: 190px;
+        overflow: auto;
+        background: #101713;
+        color: #eaf2e9;
+        border-radius: 6px;
+        padding: 12px;
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-size: 12px;
+        white-space: pre-wrap;
+      }
+
+      .switch {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+      }
+
+      input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+      }
+
+      input[type="password"], textarea {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        min-height: 40px;
+        padding: 8px 10px;
+        font: inherit;
+        background: #fff;
+        color: var(--text);
+      }
+
+      textarea {
+        min-height: 74px;
+        resize: vertical;
+      }
+
+      @media (max-width: 820px) {
+        header { display: block; }
+        .actions { justify-content: flex-start; margin-top: 14px; }
+        .span-4, .span-6, .span-8 { grid-column: span 12; }
+        dl { grid-template-columns: 1fr; gap: 2px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>Newtify Control</h1>
+          <p>Vercel RSS reader and Telegram publisher.</p>
+        </div>
+        <div class="actions">
+          <button class="primary" id="publishBtn">Publish now</button>
+          <a class="button" id="envLink" href="#" target="_blank" rel="noreferrer">Edit env</a>
+          <a class="button" href="/swelmchannel/rss" target="_blank" rel="noreferrer">Open RSS</a>
+        </div>
+      </header>
+
+      <div class="grid">
+        <section class="span-4">
+          <h2>Live Status</h2>
+          <div class="status"><span class="dot" id="healthDot"></span><span id="healthText">Checking</span></div>
+          <dl style="margin-top: 14px">
+            <dt>Last publish</dt><dd id="lastPublish">Not run yet</dd>
+            <dt>Posted ids</dt><dd id="postedIds">-</dd>
+          </dl>
+        </section>
+
+        <section class="span-4">
+          <h2>Automation</h2>
+          <label class="switch">
+            <input id="autoRun" type="checkbox">
+            Auto-run while this page is open
+          </label>
+          <dl style="margin-top: 14px">
+            <dt>Interval</dt><dd>60 seconds</dd>
+            <dt>Daily cron</dt><dd id="dailyCron">Checking</dd>
+            <dt>Fast cron</dt><dd id="cronStatus">Checking</dd>
+          </dl>
+        </section>
+
+        <section class="span-4">
+          <h2>Access</h2>
+          <dl>
+            <dt>X session</dt><dd id="xSession">Checking</dd>
+            <dt>Telegram session</dt><dd id="telegramSession">Checking</dd>
+            <dt>Telegram API</dt><dd id="telegramApi">Checking</dd>
+            <dt>Admin edit</dt><dd id="adminEdit">Checking</dd>
+          </dl>
+        </section>
+
+        <section class="span-6">
+          <h2>Posting</h2>
+          <dl>
+            <dt>X users</dt><dd id="sourceUsers">-</dd>
+            <dt>Telegram channel</dt><dd id="targetChannel">-</dd>
+            <dt>RSS base</dt><dd id="rssBase">-</dd>
+          </dl>
+        </section>
+
+        <section class="span-6">
+          <h2>Filters</h2>
+          <dl>
+            <dt>Publish window</dt><dd id="publishAge">-</dd>
+            <dt>RSS window</dt><dd id="rssAge">-</dd>
+          </dl>
+        </section>
+
+        <section class="span-12">
+          <h2>Editable Env</h2>
+          <table>
+            <thead>
+              <tr><th>Section</th><th>Env</th><th>Current</th><th>Meaning</th></tr>
+            </thead>
+            <tbody id="envRows"></tbody>
+          </table>
+        </section>
+
+        <section class="span-12">
+          <h2>Edit Env Here</h2>
+          <dl>
+            <dt>Secret code</dt>
+            <dd><input id="adminSecret" type="password" autocomplete="current-password" placeholder="Enter code"></dd>
+          </dl>
+          <div id="editFields" style="display: grid; gap: 10px; margin-top: 14px"></div>
+          <div class="actions" style="justify-content: flex-start; margin-top: 14px">
+            <button id="saveEnvBtn">Save env</button>
+            <span id="saveHint" style="color: var(--muted); align-self: center"></span>
+          </div>
+        </section>
+
+        <section class="span-12">
+          <h2>Run Log</h2>
+          <div class="log" id="log"></div>
+        </section>
+      </div>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      let autoTimer = null;
+      let editableKeys = [];
+
+      function log(line, data) {
+        const stamp = new Date().toLocaleTimeString();
+        const text = data ? `${stamp} ${line}\n${JSON.stringify(data, null, 2)}\n` : `${stamp} ${line}\n`;
+        $("log").textContent = text + $("log").textContent;
+      }
+
+      function setDot(ok, text) {
+        $("healthDot").className = `dot ${ok ? "ok" : "bad"}`;
+        $("healthText").textContent = text;
+      }
+
+      async function loadConfig() {
+        const res = await fetch("/api/config", { cache: "no-store" });
+        const cfg = await res.json();
+
+        $("envLink").href = cfg.project.envUrl;
+        $("sourceUsers").textContent = cfg.posting.sourceUsers;
+        $("targetChannel").textContent = cfg.posting.targetChannel;
+        $("rssBase").textContent = cfg.posting.rssBaseUrl;
+        $("publishAge").textContent = `${cfg.filters.publishMaxAgeMinutes} minutes`;
+        $("rssAge").textContent = `${cfg.filters.xMaxAgeMinutes} minutes`;
+        $("xSession").textContent = cfg.access.xSession ? "set" : "missing";
+        $("telegramSession").textContent = cfg.access.telegramSession ? "set" : "missing";
+        $("telegramApi").textContent = cfg.access.telegramApiId && cfg.access.telegramApiHash ? "set" : "missing";
+        $("adminEdit").textContent = cfg.access.adminSecret
+          ? (cfg.access.vercelToken ? "ready" : "needs VERCEL_TOKEN")
+          : "missing ADMIN_SECRET";
+        $("dailyCron").textContent = cfg.automation.vercelDailyCron
+          ? `${cfg.automation.vercelDailyCronSchedule} UTC`
+          : "off";
+        $("cronStatus").textContent = cfg.automation.vercelCronFast ? "enabled" : "Hobby limit: use page auto-run or Pro";
+
+        $("envRows").innerHTML = cfg.editableEnv.map((item) => `
+          <tr>
+            <td>${item.section}</td>
+            <td><code>${item.name}</code></td>
+            <td>${item.safeValue}</td>
+            <td>${item.note}</td>
+          </tr>
+        `).join("");
+
+        const formItems = cfg.editableEnv
+          .filter((item) => !["X_SESSIONS_B64", "TELEGRAM_SESSION_STRING"].includes(item.name));
+        editableKeys = formItems.map((item) => item.name);
+        $("editFields").innerHTML = formItems.map((item) => `
+          <label>
+            <div style="display: flex; justify-content: space-between; gap: 12px; margin-bottom: 4px">
+              <strong><code>${item.name}</code></strong>
+              <span style="color: var(--muted)">${item.section}</span>
+            </div>
+            <textarea data-env-key="${item.name}">${item.safeValue}</textarea>
+            <div style="color: var(--muted); font-size: 13px">${item.note}</div>
+          </label>
+        `).join("");
+
+        setDot(true, "Config loaded");
+        return cfg;
+      }
+
+      async function publishNow() {
+        $("publishBtn").disabled = true;
+        try {
+          const res = await fetch("/api/publish", { cache: "no-store" });
+          const data = await res.json();
+          $("lastPublish").textContent = new Date().toLocaleString();
+          $("postedIds").textContent = data.posted && data.posted.length ? data.posted.join(", ") : "none";
+          setDot(data.ok, data.ok ? "Publisher ok" : "Publisher failed");
+          log("Publish result", data);
+        } catch (error) {
+          setDot(false, "Publisher failed");
+          log("Publish error", { error: String(error) });
+        } finally {
+          $("publishBtn").disabled = false;
+        }
+      }
+
+      function setAutoRun(enabled) {
+        localStorage.setItem("newtify-auto-run", enabled ? "1" : "0");
+        if (autoTimer) {
+          clearInterval(autoTimer);
+          autoTimer = null;
+        }
+        if (enabled) {
+          publishNow();
+          autoTimer = setInterval(publishNow, 60000);
+        }
+      }
+
+      $("publishBtn").addEventListener("click", publishNow);
+      $("autoRun").addEventListener("change", (event) => setAutoRun(event.target.checked));
+      $("saveEnvBtn").addEventListener("click", async () => {
+        const secret = $("adminSecret").value;
+        const updates = {};
+        for (const key of editableKeys) {
+          const input = document.querySelector(`[data-env-key="${key}"]`);
+          updates[key] = input ? input.value.trim() : "";
+        }
+        $("saveEnvBtn").disabled = true;
+        $("saveHint").textContent = "Saving";
+        try {
+          const res = await fetch("/api/admin_env", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ secret, updates }),
+          });
+          const data = await res.json();
+          $("saveHint").textContent = data.ok ? "Saved. Redeploy needed." : data.error || "Some values failed";
+          log("Env save result", data);
+        } catch (error) {
+          $("saveHint").textContent = "Save failed";
+          log("Env save error", { error: String(error) });
+        } finally {
+          $("saveEnvBtn").disabled = false;
+        }
+      });
+
+      loadConfig()
+        .then(() => {
+          const enabled = localStorage.getItem("newtify-auto-run") === "1";
+          $("autoRun").checked = enabled;
+          setAutoRun(enabled);
+        })
+        .catch((error) => {
+          setDot(false, "Config failed");
+          log("Config error", { error: String(error) });
+        });
+    </script>
+  </body>
+</html>
