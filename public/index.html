@@ -340,7 +340,9 @@
         $("dailyCron").textContent = cfg.automation.vercelDailyCron
           ? `${cfg.automation.vercelDailyCronSchedule} UTC`
           : "off";
-        $("cronStatus").textContent = cfg.automation.vercelCronFast ? "enabled" : "Hobby limit: use page auto-run or Pro";
+        $("cronStatus").textContent = cfg.automation.githubMinutePing
+          ? cfg.automation.githubMinutePingSchedule
+          : (cfg.automation.vercelCronFast ? "enabled" : "Hobby limit: use page auto-run or Pro");
 
         $("envRows").innerHTML = cfg.editableEnv.map((item) => `
           <tr>

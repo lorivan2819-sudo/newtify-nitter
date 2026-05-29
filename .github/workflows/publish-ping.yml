@@ -7,17 +7,23 @@ on:
 
 concurrency:
   group: newtify-publish-ping
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   ping:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 7
     steps:
-      - name: Call publisher
+      - name: Call publisher every 60 seconds
         run: |
           set -euo pipefail
-          body="$(curl --fail-with-body --silent --show-error --max-time 55 https://newtify-nitter.vercel.app/api/publish)"
-          echo "$body"
-          echo "$body" | python -m json.tool >/dev/null
-          printf '%s' "$body" | python -c "import json,sys; data=json.load(sys.stdin); assert data.get('ok'), 'Publisher returned ok=false'; print('posted:', ','.join(data.get('posted') or []) or 'none')"
+          for attempt in 1 2 3 4 5; do
+            echo "publish ping $attempt/5"
+            body="$(curl --fail-with-body --silent --show-error --max-time 55 https://newtify-nitter.vercel.app/api/publish)"
+            echo "$body"
+            echo "$body" | python -m json.tool >/dev/null
+            printf '%s' "$body" | python -c "import json,sys; data=json.load(sys.stdin); assert data.get('ok'), 'Publisher returned ok=false'; print('posted:', ','.join(data.get('posted') or []) or 'none')"
+            if [ "$attempt" != "5" ]; then
+              sleep 60
+            fi
+          done

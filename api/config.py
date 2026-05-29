@@ -58,11 +58,13 @@ def public_config() -> dict[str, object]:
             "browserAutoRun": True,
             "vercelDailyCron": True,
             "vercelDailyCronSchedule": "0 8 * * *",
+            "githubMinutePing": True,
+            "githubMinutePingSchedule": "about every 60 seconds",
             "vercelCronFast": False,
             "vercelCronReason": (
-                "This Vercel Hobby project rejected every-minute cron. "
-                "The admin page can auto-run while it is open; fast background "
-                "cron needs Vercel Pro."
+                "GitHub Actions runs a five-step loop and calls publish about "
+                "every 60 seconds. Vercel Hobby still keeps only the daily "
+                "Vercel cron fallback."
             ),
         },
         "editableEnv": [
