@@ -4,6 +4,15 @@ on:
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
+    inputs:
+      chain:
+        description: "Keep starting the next minute ping run"
+        required: false
+        default: "true"
+
+permissions:
+  actions: write
+  contents: read
 
 concurrency:
   group: newtify-publish-ping
@@ -27,3 +36,10 @@ jobs:
               sleep 60
             fi
           done
+
+      - name: Start next ping run
+        if: ${{ !cancelled() && (github.event_name == 'schedule' || inputs.chain != 'false') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run publish-ping.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" -f chain=true
