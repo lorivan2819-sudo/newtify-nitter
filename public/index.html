@@ -416,7 +416,9 @@
             body: JSON.stringify({ secret, updates }),
           });
           const data = await res.json();
-          $("saveHint").textContent = data.ok ? "Saved. Redeploy needed." : data.error || "Some values failed";
+          $("saveHint").textContent = data.ok
+            ? "Saved. Redeploy started."
+            : data.redeployError || data.error || "Some values failed";
           log("Env save result", data);
         } catch (error) {
           $("saveHint").textContent = "Save failed";

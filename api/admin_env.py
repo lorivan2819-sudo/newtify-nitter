@@ -8,6 +8,7 @@ import urllib.request
 
 
 PROJECT_ID = "prj_m29Yt5NzkeV2UlrCkuErCzRqexb4"
+PROJECT_NAME = "newtify-nitter"
 TEAM_ID = "team_mKTDeqocEA6OFmFVXjqOT7aO"
 VERCEL_API = "https://api.vercel.com"
 
@@ -36,29 +37,99 @@ def json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict) -
     handler.wfile.write(body)
 
 
-def upsert_env(key: str, value: str, token: str) -> dict:
-    kind = ALLOWED_KEYS[key]
-    body = json.dumps(
-        {
-            "key": key,
-            "value": value,
-            "type": kind,
-            "target": ["production"],
-            "comment": "Updated from Newtify Control",
-        }
-    ).encode("utf-8")
-    query = urllib.parse.urlencode({"teamId": TEAM_ID, "upsert": "true"})
+def api_error(exc: Exception) -> str:
+    if hasattr(exc, "code") and hasattr(exc, "read"):
+        try:
+            payload = json.loads(exc.read().decode("utf-8"))
+            message = payload.get("error", {}).get("message") or payload.get("message")
+            if message:
+                return f"Vercel API {exc.code}: {message}"
+        except Exception:
+            pass
+        return f"Vercel API {exc.code}"
+    return str(exc)
+
+
+def vercel_request(path: str, token: str, method: str = "GET", body: dict | None = None, query: dict | None = None) -> dict:
+    query = {"teamId": TEAM_ID, **(query or {})}
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    url = f"{VERCEL_API}{path}?{urllib.parse.urlencode(query)}"
     request = urllib.request.Request(
-        f"{VERCEL_API}/v10/projects/{PROJECT_ID}/env?{query}",
-        data=body,
-        method="POST",
+        url,
+        data=data,
+        method=method,
         headers={
             "authorization": f"Bearer {token}",
             "content-type": "application/json",
         },
     )
-    with urllib.request.urlopen(request, timeout=20) as response:
-        return json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            raw = response.read().decode("utf-8")
+            return json.loads(raw) if raw else {}
+    except Exception as exc:
+        raise RuntimeError(api_error(exc)) from exc
+
+
+def upsert_env(key: str, value: str, token: str) -> dict:
+    kind = ALLOWED_KEYS[key]
+    return vercel_request(
+        f"/v10/projects/{PROJECT_ID}/env",
+        token,
+        method="POST",
+        query={"upsert": "true"},
+        body={
+            "key": key,
+            "value": value,
+            "type": kind,
+            "target": ["production"],
+            "comment": "Updated from Newtify Control",
+        },
+    )
+
+
+def latest_production_deployment(token: str) -> dict:
+    data = vercel_request(
+        "/v6/deployments",
+        token,
+        query={
+            "projectId": PROJECT_ID,
+            "target": "production",
+            "state": "READY",
+            "limit": "1",
+        },
+    )
+    deployments = data.get("deployments") or []
+    if not deployments:
+        data = vercel_request(
+            "/v6/deployments",
+            token,
+            query={"projectId": PROJECT_ID, "target": "production", "limit": "1"},
+        )
+        deployments = data.get("deployments") or []
+    if not deployments:
+        raise RuntimeError("No production deployment found to redeploy")
+    return deployments[0]
+
+
+def start_redeploy(token: str) -> dict:
+    previous = latest_production_deployment(token)
+    deployment_id = previous.get("uid") or previous.get("id")
+    if not deployment_id:
+        raise RuntimeError("Latest production deployment has no id")
+
+    return vercel_request(
+        "/v13/deployments",
+        token,
+        method="POST",
+        query={"forceNew": "1"},
+        body={
+            "name": PROJECT_NAME,
+            "project": PROJECT_ID,
+            "deploymentId": deployment_id,
+            "target": "production",
+        },
+    )
 
 
 class handler(BaseHTTPRequestHandler):
@@ -103,14 +174,32 @@ class handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 errors.append({"key": key, "error": str(exc)})
 
+        redeploy = None
+        redeploy_error = ""
+        if changed and not errors:
+            try:
+                deployment = start_redeploy(token)
+                redeploy = {
+                    "id": deployment.get("id") or deployment.get("uid"),
+                    "url": deployment.get("url"),
+                    "inspectorUrl": deployment.get("inspectorUrl"),
+                    "readyState": deployment.get("readyState") or deployment.get("status"),
+                }
+            except Exception as exc:
+                redeploy_error = str(exc)
+
+        ok = bool(changed) and not errors and not redeploy_error
         json_response(
             self,
-            200 if changed and not errors else 207,
+            200 if ok else 207,
             {
-                "ok": bool(changed) and not errors,
+                "ok": ok,
                 "changed": changed,
                 "errors": errors,
-                "redeployRequired": True,
-                "note": "Vercel env updates apply after the next production deployment.",
+                "redeployStarted": bool(redeploy),
+                "redeploy": redeploy,
+                "redeployError": redeploy_error,
+                "redeployRequired": bool(changed) and bool(redeploy_error),
+                "note": "Env saved and production redeploy started." if redeploy else "Env saved, but redeploy did not start.",
             },
         )
