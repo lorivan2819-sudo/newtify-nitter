@@ -12,6 +12,19 @@ PROJECT_NAME = "newtify-nitter"
 TEAM_ID = "team_mKTDeqocEA6OFmFVXjqOT7aO"
 VERCEL_API = "https://api.vercel.com"
 
+SETTING_IDS = {
+    "source_accounts": "X_SOURCE_USERS",
+    "destination": "TARGET_CHANNEL",
+    "publish_window": "PUBLISH_MAX_AGE_MINUTES",
+    "feed_window": "X_MAX_AGE_MINUTES",
+    "translation_mode": "TRANSLATE_ENABLED",
+    "primary_language": "TRANSLATE_PRIMARY_LANG",
+    "secondary_language": "TRANSLATE_TARGET_LANG",
+    "feed_base": "RSS_BASE_URL",
+    "source_session": "X_SESSIONS_B64",
+    "delivery_session": "TELEGRAM_SESSION_STRING",
+}
+
 ALLOWED_KEYS = {
     "X_SOURCE_USERS": "plain",
     "TARGET_CHANNEL": "plain",
@@ -86,7 +99,7 @@ def upsert_env(key: str, value: str, token: str) -> dict:
             "value": value,
             "type": kind,
             "target": ["production"],
-            "comment": "Updated from Newtify Control",
+            "comment": "Updated from Cedar Panel",
         },
     )
 
@@ -167,15 +180,16 @@ class handler(BaseHTTPRequestHandler):
 
         changed = []
         errors = []
-        for key, value in updates.items():
+        for setting_id, value in updates.items():
+            key = SETTING_IDS.get(setting_id, setting_id)
             if key not in ALLOWED_KEYS:
-                errors.append({"key": key, "error": "Not editable from this page"})
+                errors.append({"setting": setting_id, "error": "Not editable from this page"})
                 continue
             try:
                 upsert_env(key, str(value), token)
-                changed.append(key)
+                changed.append(setting_id)
             except Exception as exc:
-                errors.append({"key": key, "error": str(exc)})
+                errors.append({"setting": setting_id, "error": str(exc)})
 
         redeploy = None
         redeploy_error = ""

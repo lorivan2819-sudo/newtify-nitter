@@ -23,7 +23,7 @@ def public_config() -> dict[str, object]:
     x_users = env("X_SOURCE_USERS", "swelmchannel")
     return {
         "project": {
-            "name": "newtify-nitter",
+            "name": "Cedar Panel",
             "envUrl": PROJECT_ENV_URL,
             "publishUrl": "/api/publish",
             "healthUrl": "/health",
@@ -59,74 +59,84 @@ def public_config() -> dict[str, object]:
             "vercelDailyCron": True,
             "vercelDailyCronSchedule": "0 8 * * *",
             "githubMinutePing": True,
-            "githubMinutePingSchedule": "about every 60 seconds",
+            "githubMinutePingSchedule": "about every 10 seconds",
             "vercelCronFast": False,
             "vercelCronReason": (
-                "GitHub Actions runs a five-step loop and calls publish about "
-                "every 60 seconds. Vercel Hobby still keeps only the daily "
+                "GitHub Actions runs a loop and calls publish about "
+                "every 10 seconds. Vercel Hobby still keeps only the daily "
                 "Vercel cron fallback."
             ),
         },
         "editableEnv": [
             {
-                "name": "X_SOURCE_USERS",
-                "section": "What to read",
+                "id": "source_accounts",
+                "label": "Source accounts",
+                "section": "Input",
                 "safeValue": x_users,
-                "note": "Comma-separated X usernames.",
+                "note": "Comma-separated account usernames.",
             },
             {
-                "name": "TARGET_CHANNEL",
-                "section": "Where to post",
+                "id": "destination",
+                "label": "Destination",
+                "section": "Output",
                 "safeValue": env("TARGET_CHANNEL", "@WWAInews"),
-                "note": "Telegram channel username or id.",
+                "note": "Channel username or id.",
             },
             {
-                "name": "PUBLISH_MAX_AGE_MINUTES",
-                "section": "Posting filter",
+                "id": "publish_window",
+                "label": "Publish window",
+                "section": "Filter",
                 "safeValue": env("PUBLISH_MAX_AGE_MINUTES", "45"),
                 "note": "How old a post can be and still be uploaded.",
             },
             {
-                "name": "X_MAX_AGE_MINUTES",
-                "section": "RSS filter",
+                "id": "feed_window",
+                "label": "Feed window",
+                "section": "Filter",
                 "safeValue": env("X_MAX_AGE_MINUTES", "2"),
-                "note": "Old local bot freshness setting; publisher uses the value above.",
+                "note": "Secondary freshness setting; publisher uses the value above.",
             },
             {
-                "name": "TRANSLATE_ENABLED",
+                "id": "translation_mode",
+                "label": "Translation mode",
                 "section": "Translation",
                 "safeValue": env("TRANSLATE_ENABLED", "true"),
-                "note": "Use true or false. When true, Telegram posts include a translated version.",
+                "note": "Use true or false. When true, posts include a translated version.",
             },
             {
-                "name": "TRANSLATE_PRIMARY_LANG",
+                "id": "primary_language",
+                "label": "Primary language",
                 "section": "Translation",
                 "safeValue": env("TRANSLATE_PRIMARY_LANG", "en"),
                 "note": "Primary visible language, matching the old bot default.",
             },
             {
-                "name": "TRANSLATE_TARGET_LANG",
+                "id": "secondary_language",
+                "label": "Secondary language",
                 "section": "Translation",
                 "safeValue": env("TRANSLATE_TARGET_LANG", env("TRANSLATE_SECONDARY_LANG", "ru")),
                 "note": "Target language code for translation, for example ru, en, es.",
             },
             {
-                "name": "X_SESSIONS_B64",
-                "section": "X access",
+                "id": "source_session",
+                "label": "Source session",
+                "section": "Access",
                 "safeValue": "set" if is_set("X_SESSIONS_B64") else "missing",
-                "note": "Signed-in X cookie session, encrypted in Vercel.",
+                "note": "Signed-in source session, encrypted in the host.",
             },
             {
-                "name": "RSS_BASE_URL",
+                "id": "feed_base",
+                "label": "Feed base",
                 "section": "Advanced",
                 "safeValue": env("RSS_BASE_URL", "https://newtify-nitter.vercel.app"),
                 "note": "RSS service base URL.",
             },
             {
-                "name": "TELEGRAM_SESSION_STRING",
-                "section": "Telegram access",
+                "id": "delivery_session",
+                "label": "Delivery session",
+                "section": "Access",
                 "safeValue": "set" if is_set("TELEGRAM_SESSION_STRING") else "missing",
-                "note": "Telegram login session, encrypted in Vercel.",
+                "note": "Delivery login session, encrypted in the host.",
             },
         ],
     }

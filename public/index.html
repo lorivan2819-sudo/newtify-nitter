@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Newtify Control</title>
+    <title>Cedar Panel</title>
     <style>
       :root {
         color-scheme: light;
@@ -215,13 +215,13 @@
     <main>
       <header>
         <div>
-          <h1>Newtify Control</h1>
-          <p>Vercel RSS reader and Telegram publisher.</p>
+          <h1>Cedar Panel</h1>
+          <p>Feed reader and delivery control.</p>
         </div>
         <div class="actions">
           <button class="primary" id="publishBtn">Publish now</button>
-          <a class="button" id="envLink" href="#" target="_blank" rel="noreferrer">Edit env</a>
-          <a class="button" href="/swelmchannel/rss" target="_blank" rel="noreferrer">Open RSS</a>
+          <a class="button" id="envLink" href="#" target="_blank" rel="noreferrer">Host settings</a>
+          <a class="button" href="/swelmchannel/rss" target="_blank" rel="noreferrer">Open feed</a>
         </div>
       </header>
 
@@ -251,9 +251,9 @@
         <section class="span-4">
           <h2>Access</h2>
           <dl>
-            <dt>X session</dt><dd id="xSession">Checking</dd>
-            <dt>Telegram session</dt><dd id="telegramSession">Checking</dd>
-            <dt>Telegram API</dt><dd id="telegramApi">Checking</dd>
+            <dt>Source access</dt><dd id="xSession">Checking</dd>
+            <dt>Delivery session</dt><dd id="telegramSession">Checking</dd>
+            <dt>Delivery API</dt><dd id="telegramApi">Checking</dd>
             <dt>Admin edit</dt><dd id="adminEdit">Checking</dd>
           </dl>
         </section>
@@ -261,9 +261,9 @@
         <section class="span-6">
           <h2>Posting</h2>
           <dl>
-            <dt>X users</dt><dd id="sourceUsers">-</dd>
-            <dt>Telegram channel</dt><dd id="targetChannel">-</dd>
-            <dt>RSS base</dt><dd id="rssBase">-</dd>
+            <dt>Source accounts</dt><dd id="sourceUsers">-</dd>
+            <dt>Destination</dt><dd id="targetChannel">-</dd>
+            <dt>Feed base</dt><dd id="rssBase">-</dd>
           </dl>
         </section>
 
@@ -271,29 +271,29 @@
           <h2>Filters</h2>
           <dl>
             <dt>Publish window</dt><dd id="publishAge">-</dd>
-            <dt>RSS window</dt><dd id="rssAge">-</dd>
+            <dt>Feed window</dt><dd id="rssAge">-</dd>
           </dl>
         </section>
 
         <section class="span-12">
-          <h2>Editable Env</h2>
+          <h2>Editable Settings</h2>
           <table>
             <thead>
-              <tr><th>Section</th><th>Env</th><th>Current</th><th>Meaning</th></tr>
+              <tr><th>Section</th><th>Setting</th><th>Current</th><th>Meaning</th></tr>
             </thead>
             <tbody id="envRows"></tbody>
           </table>
         </section>
 
         <section class="span-12">
-          <h2>Edit Env Here</h2>
+          <h2>Edit Settings Here</h2>
           <dl>
             <dt>Secret code</dt>
             <dd><input id="adminSecret" type="password" autocomplete="current-password" placeholder="Enter code"></dd>
           </dl>
           <div id="editFields" style="display: grid; gap: 10px; margin-top: 14px"></div>
           <div class="actions" style="justify-content: flex-start; margin-top: 14px">
-            <button id="saveEnvBtn">Save env</button>
+            <button id="saveEnvBtn">Save settings</button>
             <span id="saveHint" style="color: var(--muted); align-self: center"></span>
           </div>
         </section>
@@ -335,8 +335,8 @@
         $("telegramSession").textContent = cfg.access.telegramSession ? "set" : "missing";
         $("telegramApi").textContent = cfg.access.telegramApiId && cfg.access.telegramApiHash ? "set" : "missing";
         $("adminEdit").textContent = cfg.access.adminSecret
-          ? (cfg.access.vercelToken ? "ready" : "needs VERCEL_TOKEN")
-          : "missing ADMIN_SECRET";
+          ? (cfg.access.vercelToken ? "ready" : "needs host token")
+          : "missing secret code";
         $("dailyCron").textContent = cfg.automation.vercelDailyCron
           ? `${cfg.automation.vercelDailyCronSchedule} UTC`
           : "off";
@@ -347,22 +347,22 @@
         $("envRows").innerHTML = cfg.editableEnv.map((item) => `
           <tr>
             <td>${item.section}</td>
-            <td><code>${item.name}</code></td>
+            <td>${item.label}</td>
             <td>${item.safeValue}</td>
             <td>${item.note}</td>
           </tr>
         `).join("");
 
         const formItems = cfg.editableEnv
-          .filter((item) => !["X_SESSIONS_B64", "TELEGRAM_SESSION_STRING"].includes(item.name));
-        editableKeys = formItems.map((item) => item.name);
+          .filter((item) => !["source_session", "delivery_session"].includes(item.id));
+        editableKeys = formItems.map((item) => item.id);
         $("editFields").innerHTML = formItems.map((item) => `
           <label>
             <div style="display: flex; justify-content: space-between; gap: 12px; margin-bottom: 4px">
-              <strong><code>${item.name}</code></strong>
+              <strong>${item.label}</strong>
               <span style="color: var(--muted)">${item.section}</span>
             </div>
-            <textarea data-env-key="${item.name}">${item.safeValue}</textarea>
+            <textarea data-setting-id="${item.id}">${item.safeValue}</textarea>
             <div style="color: var(--muted); font-size: 13px">${item.note}</div>
           </label>
         `).join("");
@@ -389,7 +389,7 @@
       }
 
       function setAutoRun(enabled) {
-        localStorage.setItem("newtify-auto-run", enabled ? "1" : "0");
+        localStorage.setItem("cedar-auto-run", enabled ? "1" : "0");
         if (autoTimer) {
           clearInterval(autoTimer);
           autoTimer = null;
@@ -406,7 +406,7 @@
         const secret = $("adminSecret").value;
         const updates = {};
         for (const key of editableKeys) {
-          const input = document.querySelector(`[data-env-key="${key}"]`);
+          const input = document.querySelector(`[data-setting-id="${key}"]`);
           updates[key] = input ? input.value.trim() : "";
         }
         $("saveEnvBtn").disabled = true;
@@ -421,10 +421,10 @@
           $("saveHint").textContent = data.ok
             ? "Saved. Redeploy started."
             : data.redeployError || data.error || "Some values failed";
-          log("Env save result", data);
+          log("Settings save result", data);
         } catch (error) {
           $("saveHint").textContent = "Save failed";
-          log("Env save error", { error: String(error) });
+          log("Settings save error", { error: String(error) });
         } finally {
           $("saveEnvBtn").disabled = false;
         }
@@ -432,7 +432,7 @@
 
       loadConfig()
         .then(() => {
-          const enabled = localStorage.getItem("newtify-auto-run") === "1";
+          const enabled = localStorage.getItem("cedar-auto-run") === "1";
           $("autoRun").checked = enabled;
           setAutoRun(enabled);
         })
