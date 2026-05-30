@@ -242,7 +242,7 @@
             Auto-run while this page is open
           </label>
           <dl style="margin-top: 14px">
-            <dt>Interval</dt><dd>60 seconds</dd>
+            <dt>Interval</dt><dd>10 seconds</dd>
             <dt>Daily cron</dt><dd id="dailyCron">Checking</dd>
             <dt>Fast cron</dt><dd id="cronStatus">Checking</dd>
           </dl>
@@ -396,7 +396,7 @@
         }
         if (enabled) {
           publishNow();
-          autoTimer = setInterval(publishNow, 60000);
+          autoTimer = setInterval(publishNow, 10000);
         }
       }
 

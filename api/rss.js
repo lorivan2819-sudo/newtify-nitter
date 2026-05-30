@@ -4,6 +4,14 @@ const DEFAULT_UPSTREAMS = [];
 
 const REQUEST_TIMEOUT_MS = Number(process.env.UPSTREAM_TIMEOUT_MS || 4500);
 const X_TIMEOUT_MS = Number(process.env.X_TIMEOUT_MS || 7000);
+const RSS_CACHE_SECONDS = Number(process.env.RSS_CACHE_SECONDS || 30);
+const RSS_STALE_SECONDS = Number(process.env.RSS_STALE_SECONDS || 300);
+const RSS_ERROR_STALE_SECONDS = Number(process.env.RSS_ERROR_STALE_SECONDS || 900);
+const RSS_CACHE_CONTROL =
+  `s-maxage=${RSS_CACHE_SECONDS}, stale-while-revalidate=${RSS_STALE_SECONDS}, ` +
+  `stale-if-error=${RSS_ERROR_STALE_SECONDS}`;
+const FEED_CACHE = globalThis.__cedarFeedCache || new Map();
+globalThis.__cedarFeedCache = FEED_CACHE;
 
 const COOKIE_BEARER_TOKEN =
   "Bearer AAAAAAAAAAAAAAAAAAAAAFXzAwAAAAAAMHCxpeSDG1gLNLghVe8d74hl6k4%3DRUMF4xAQLsbeBhTSRrCiQpJtxoGWeyHrDb5te2jpGskWDFW82F";
@@ -84,6 +92,55 @@ function looksLikeRss(feed) {
     /<(item|entry)\b/i.test(feed) &&
     /\/status\/\d{8,}/.test(feed)
   );
+}
+
+function rememberFeed(user, text, details = {}) {
+  if (!looksLikeRss(text)) {
+    return;
+  }
+  FEED_CACHE.set(user.toLowerCase(), {
+    text,
+    details,
+    cachedAt: Date.now()
+  });
+}
+
+function cachedFeed(user) {
+  return FEED_CACHE.get(user.toLowerCase()) || null;
+}
+
+function sendFeed(res, text, mode, headers = {}) {
+  res.setHeader("Content-Type", "application/rss+xml; charset=utf-8");
+  res.setHeader("Cache-Control", RSS_CACHE_CONTROL);
+  res.setHeader("X-Cedar-Mode", mode);
+  for (const [key, value] of Object.entries(headers)) {
+    if (value !== undefined && value !== null && value !== "") {
+      res.setHeader(key, String(value));
+    }
+  }
+  res.status(200).send(text);
+}
+
+function shortError(error) {
+  return String(error?.message || error || "").replace(/\s+/g, " ").slice(0, 180);
+}
+
+function isRateLimitError(error) {
+  return /429|rate limit/i.test(shortError(error));
+}
+
+function emptyRss(username) {
+  const now = new Date().toUTCString();
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/elements/1.1/" version="2.0">
+<channel>
+<title>@${xml(username)}</title>
+<link>https://x.com/${xml(username)}</link>
+<description>Cedar fallback feed for @${xml(username)}</description>
+<language>en-us</language>
+<lastBuildDate>${xml(now)}</lastBuildDate>
+</channel>
+</rss>`;
 }
 
 async function fetchFeed(baseUrl, user) {
@@ -646,21 +703,39 @@ export default async function handler(req, res) {
 
   try {
     const rss = await directFeed(user);
-    res.setHeader("Content-Type", "application/rss+xml; charset=utf-8");
-    res.setHeader("Cache-Control", "s-maxage=10, stale-while-revalidate=30");
-    res.setHeader("X-Newtify-Mode", "direct");
-    res.status(200).send(rss);
+    rememberFeed(user, rss, { mode: "direct" });
+    sendFeed(res, rss, "direct");
     return;
   } catch (directError) {
     try {
       const best = await upstreamFeed(user);
-      res.setHeader("Content-Type", "application/rss+xml; charset=utf-8");
-      res.setHeader("Cache-Control", "s-maxage=10, stale-while-revalidate=30");
-      res.setHeader("X-Newtify-Mode", "upstream");
-      res.setHeader("X-Newtify-Upstream", best.baseUrl);
-      res.setHeader("X-Newtify-Newest-Id", best.newestId.toString());
-      res.status(200).send(best.text);
-    } catch {
+      rememberFeed(user, best.text, {
+        mode: "upstream",
+        upstream: best.baseUrl,
+        newestId: best.newestId.toString()
+      });
+      sendFeed(res, best.text, "upstream", {
+        "X-Cedar-Upstream": best.baseUrl,
+        "X-Cedar-Newest-Id": best.newestId.toString()
+      });
+    } catch (upstreamError) {
+      const cached = cachedFeed(user);
+      if (cached) {
+        sendFeed(res, cached.text, "stale-cache", {
+          "X-Cedar-Cache-Age": Math.floor((Date.now() - cached.cachedAt) / 1000),
+          "X-Cedar-Source-Error": shortError(directError),
+          "X-Cedar-Upstream-Error": shortError(upstreamError),
+          "X-Cedar-Previous-Mode": cached.details?.mode
+        });
+        return;
+      }
+      if (isRateLimitError(directError)) {
+        sendFeed(res, emptyRss(user), "rate-limited-empty", {
+          "X-Cedar-Source-Error": shortError(directError),
+          "X-Cedar-Upstream-Error": shortError(upstreamError)
+        });
+        return;
+      }
       res.setHeader("Cache-Control", "no-store");
       res.status(502).send(`No RSS feed available: ${directError.message}`);
     }
