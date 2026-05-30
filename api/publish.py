@@ -167,13 +167,37 @@ def clean_description(value: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", value).strip()
 
 
-def text_fingerprint(value: str) -> str:
+def canonical_text(value: str) -> str:
     value = value.replace(MARKER_START, "").replace(MARKER_END, "")
     value = value.replace(MARKER_ZERO, "").replace(MARKER_ONE, "")
     value = TAG_RE.sub("", value)
     value = TCO_RE.sub("", value)
+    value = re.sub(r"^\s*RT\s+@[A-Za-z0-9_]{1,20}:\s*", "", value, flags=re.I)
     value = re.sub(r"\s+", " ", value).strip().lower()
-    return value[:320]
+    return value
+
+
+def text_fingerprint(value: str) -> str:
+    return canonical_text(value)[:320]
+
+
+def text_fingerprints(value: str) -> set[str]:
+    fingerprints = set()
+    full = text_fingerprint(value)
+    if full:
+        fingerprints.add(full)
+
+    original = re.split(r"\n\s*\n\s*[^\n:]{2,32}:\s*\n", value, maxsplit=1)[0]
+    original_fingerprint = text_fingerprint(original)
+    if original_fingerprint:
+        fingerprints.add(original_fingerprint)
+
+    without_retweet = re.sub(r"^\s*RT\s+@[A-Za-z0-9_]{1,20}:\s*", "", value, flags=re.I)
+    retweet_fingerprint = text_fingerprint(without_retweet)
+    if retweet_fingerprint:
+        fingerprints.add(retweet_fingerprint)
+
+    return fingerprints
 
 
 def encode_hidden_id(source_url: str) -> str:
@@ -332,9 +356,7 @@ async def sent_statuses(client: TelegramClient, channel: str) -> tuple[dict[str,
     fingerprints: set[str] = set()
     async for message in client.iter_messages(channel, limit=80):
         text = message.message or ""
-        fingerprint = text_fingerprint(text)
-        if fingerprint:
-            fingerprints.add(fingerprint)
+        fingerprints.update(text_fingerprints(text))
         message_ids = set(STATUS_RE.findall(text))
         message_ids.update(decode_hidden_ids(text))
         for entity in message.entities or []:
@@ -500,7 +522,7 @@ async def publish() -> dict[str, object]:
 
             for item in sorted(parse_items(body), key=lambda row: row["published"]):
                 tweet_id = str(item["id"])
-                fingerprint = text_fingerprint(str(item.get("text", "")))
+                fingerprints = text_fingerprints(str(item.get("text", "")))
                 if not is_recent(item):
                     continue
                 has_media = bool(item.get("media") or item.get("images"))
@@ -515,12 +537,11 @@ async def publish() -> dict[str, object]:
                             if len(posted) >= max_posts:
                                 return {"ok": True, "posted": posted, "sent": sent_details, "checked": checked}
                     continue
-                if fingerprint and fingerprint in sent_fingerprints:
+                if fingerprints and fingerprints & sent_fingerprints:
                     continue
                 sent_details[tweet_id] = await send_item(client, channel, item)
                 already_sent[tweet_id] = bool(sent_details[tweet_id].get("media_sent", 0))
-                if fingerprint:
-                    sent_fingerprints.add(fingerprint)
+                sent_fingerprints.update(fingerprints)
                 posted.append(tweet_id)
                 if len(posted) >= max_posts:
                     return {"ok": True, "posted": posted, "sent": sent_details, "checked": checked}
